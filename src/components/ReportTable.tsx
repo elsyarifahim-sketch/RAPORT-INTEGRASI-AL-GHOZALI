@@ -18,43 +18,51 @@ export const ReportTable: React.FC<ReportTableProps> = ({
   rank,
 }) => {
   return (
-    <div className="w-full">
-      <table className="w-full border-collapse border border-stone-800 text-[11px] leading-tight select-none">
+    <div className="w-full my-1">
+      <table className="w-full table-fixed border-collapse border border-stone-800 text-[11px] leading-tight select-none">
+        <colgroup>
+          <col style={{ width: '24%' }} />
+          <col style={{ width: '7%' }} />
+          <col style={{ width: '7%' }} />
+          <col style={{ width: '28%' }} />
+          <col style={{ width: '28%' }} />
+          <col style={{ width: '6%' }} />
+        </colgroup>
         <thead>
           <tr className="bg-stone-50 border-b border-stone-800 font-bold text-center">
             {/* Column 1: Grades received (with 3 sub-columns) */}
             <th
               colSpan={3}
-              className="border border-stone-800 py-1.5 px-2 font-arabic text-xs md:text-sm text-stone-900"
+              className="border border-stone-800 py-1.5 px-2 font-arabic text-xs md:text-sm text-stone-900 bg-stone-100/50"
             >
               الدرجة التي حصلت عليها الطالب / الطالبة
             </th>
 
             {/* Column 2: Mata Pelajaran */}
-            <th className="border border-stone-800 py-1.5 px-2 text-stone-900 font-bold text-xs w-[24%]">
+            <th className="border border-stone-800 py-1.5 px-2 text-stone-900 font-bold text-xs">
               Mata Pelajaran
             </th>
 
             {/* Column 3: Al-Mawad Ad-Dirasiyyah */}
-            <th className="border border-stone-800 py-1.5 px-2 font-arabic text-xs md:text-sm text-stone-900 w-[24%]">
+            <th className="border border-stone-800 py-1.5 px-2 font-arabic text-xs md:text-sm text-stone-900">
               المواد الدّراسيّة
             </th>
 
             {/* Column 4: Number */}
-            <th className="border border-stone-800 py-1.5 px-1 font-arabic text-xs text-stone-900 w-[6%]">
+            <th className="border border-stone-800 py-1.5 px-1 font-arabic text-xs text-stone-900">
               الرقم
             </th>
           </tr>
 
           {/* Sub-header row for grades */}
-          <tr className="border-b border-stone-800 text-[10px] text-center font-semibold bg-stone-100/70">
-            <th className="border border-stone-800 py-0.5 px-2 text-right font-arabic w-[22%]">
+          <tr className="border-b border-stone-800 text-[10px] text-center font-semibold bg-stone-100/80">
+            <th className="border border-stone-800 py-0.5 px-2 text-right font-arabic">
               بالحروف
             </th>
-            <th className="border border-stone-800 py-0.5 px-1 w-[8%] font-sans">
+            <th className="border border-stone-800 py-0.5 px-1 font-sans">
               Angka
             </th>
-            <th className="border border-stone-800 py-0.5 px-1 w-[8%] font-arabic">
+            <th className="border border-stone-800 py-0.5 px-1 font-arabic">
               بالأرقام
             </th>
             <th className="border border-stone-800 py-0.5 px-2 font-normal text-stone-500 italic">
@@ -83,7 +91,7 @@ export const ReportTable: React.FC<ReportTableProps> = ({
                 className="hover:bg-amber-50/40 transition-colors border-b border-stone-800 text-stone-900"
               >
                 {/* 1. Score in Arabic Words (Tafqit) */}
-                <td className="border border-stone-800 py-[2.5px] px-2 text-right font-arabic font-medium text-[11px] whitespace-nowrap">
+                <td className="border border-stone-800 py-[2.5px] px-2 text-right font-arabic font-medium text-[11px] truncate">
                   {arabicWords}
                 </td>
 
@@ -98,12 +106,12 @@ export const ReportTable: React.FC<ReportTableProps> = ({
                 </td>
 
                 {/* 4. Mata Pelajaran (Latin Indonesian) */}
-                <td className="border border-stone-800 py-[2.5px] px-2 text-left font-sans text-[11px]">
+                <td className="border border-stone-800 py-[2.5px] px-2 text-left font-sans text-[11px] truncate">
                   {subject.nameId}
                 </td>
 
                 {/* 5. Al-Mawad Ad-Dirasiyyah (Arabic) */}
-                <td className="border border-stone-800 py-[2.5px] px-2 text-right font-arabic font-medium text-[12px] whitespace-nowrap">
+                <td className="border border-stone-800 py-[2.5px] px-2 text-right font-arabic font-medium text-[12px] truncate">
                   {subject.nameAr}
                 </td>
 

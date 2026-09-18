@@ -3,7 +3,7 @@ export interface ClassItem {
   nameLatin: string;
   nameAr: string;
   waliKelasName?: string;
-  level?: '1' | '2' | '3';
+  level?: '1' | '2' | '3' | '1int' | '2int' | '4' | '3int' | '5' | '6';
 }
 
 export interface Subject {
@@ -29,6 +29,23 @@ export interface CalculatedStudent extends StudentRecord {
   totalScore: number;
   averageScore: number;
   rank: number;
+}
+
+export type UserRole = 'guru' | 'wali_kelas' | 'admin';
+export type JenjangUnit = 'SMP' | 'SMA' | 'TMMIA';
+
+export interface AuthUser {
+  role: UserRole;
+  name: string;
+  unit?: JenjangUnit;
+  availableUnits?: JenjangUnit[];
+  teacherId?: string;
+  academicTitle?: string;
+  assignedClassIds?: string[];
+  assignedClassIdsByUnit?: Record<JenjangUnit, string[]>;
+  assignedSubjectNames?: string[];
+  homeroomClassId?: string;
+  homeroomClassName?: string;
 }
 
 export interface SchoolConfig {

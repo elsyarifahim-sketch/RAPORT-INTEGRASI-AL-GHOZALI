@@ -1,6 +1,9 @@
-import React, { useState, useRef } from 'react';
-import { ClassItem, Subject, CalculatedStudent } from '../types';
+import React, { useState, useRef, useMemo } from 'react';
+import { ClassItem, Subject, CalculatedStudent, AuthUser, JenjangUnit } from '../types';
 import { toEasternArabicNumerals, numberToArabicWords } from '../utils/arabicNumbers';
+import { findTeachersForSubjectAndClass } from '../data/teacherSubjectsDatabase';
+import { canUserEditSubject, getJenjangForClass } from '../utils/authHelpers';
+import * as XLSX from 'xlsx';
 import {
   BookOpen,
   Users,
@@ -15,6 +18,11 @@ import {
   ChevronRight,
   TrendingUp,
   Award,
+  Lock,
+  Unlock,
+  ShieldAlert,
+  School,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 interface TeacherGradingViewProps {
@@ -28,6 +36,9 @@ interface TeacherGradingViewProps {
   allStudents?: CalculatedStudent[];
   onUpdateScore: (studentId: string, subjectId: string, value: number) => void;
   onOpenRaportForStudent: (studentId: string) => void;
+  currentUser?: AuthUser | null;
+  activeJenjang?: JenjangUnit;
+  onSelectJenjang?: (unit: JenjangUnit) => void;
 }
 
 export const TeacherGradingView: React.FC<TeacherGradingViewProps> = ({
@@ -41,13 +52,42 @@ export const TeacherGradingView: React.FC<TeacherGradingViewProps> = ({
   allStudents = [],
   onUpdateScore,
   onOpenRaportForStudent,
+  currentUser = null,
+  activeJenjang,
+  onSelectJenjang,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'pondok' | 'umum' | 'lisan'>('all');
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
-  const currentClass = classes.find((c) => c.id === selectedClassId) || classes[0];
-  const currentSubject = subjects.find((s) => s.id === selectedSubjectId) || subjects[0];
+  const currentClass = classes.find((c) => c.id === selectedClassId) || classes[0] || {
+    id: '1a',
+    nameLatin: '1A (1 A Tahfiz Putri)',
+    nameAr: 'الأوّل - A تحفيظ (بنات)',
+    waliKelasName: '',
+  };
+
+  const isAdmin = currentUser?.role === 'admin';
+  const availableUnits: JenjangUnit[] = currentUser?.availableUnits || (isAdmin ? ['SMP', 'SMA', 'TMMIA'] : ['SMP']);
+  const effectiveJenjang: JenjangUnit = activeJenjang || (currentClass ? getJenjangForClass(currentClass) : 'SMP');
+  const currentSubject = subjects.find((s) => s.id === selectedSubjectId) || subjects[0] || {
+    id: 's1',
+    order: 1,
+    nameId: 'Mata Pelajaran',
+    nameAr: 'المادة الدراسية',
+    category: 'pondok' as const,
+  };
+
+  // Find teachers assigned to this subject & class from Database Guru
+  const assignedTeachers = useMemo(() => {
+    return findTeachersForSubjectAndClass(currentSubject.nameId, currentClass.nameLatin);
+  }, [currentSubject.nameId, currentClass.nameLatin]);
+
+  // Check if current logged-in user is authorized to edit scores for this subject in this class
+  const canEditCurrentSubject = useMemo(() => {
+    if (!currentUser) return true;
+    return canUserEditSubject(currentUser, currentSubject.nameId, currentClass.nameLatin);
+  }, [currentUser, currentSubject.nameId, currentClass.nameLatin]);
 
   // Filtered subjects based on category filter
   const filteredSubjects = subjects.filter(
@@ -60,6 +100,19 @@ export const TeacherGradingView: React.FC<TeacherGradingViewProps> = ({
       s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       s.nisn.includes(searchTerm)
   );
+
+  // Auto-select first authorized subject for guru when class changes
+  React.useEffect(() => {
+    if (currentUser?.role === 'guru' && subjects.length > 0) {
+      const isCurrentEditable = canUserEditSubject(currentUser, currentSubject.nameId, currentClass.nameLatin);
+      if (!isCurrentEditable) {
+        const firstEditable = subjects.find((s) => canUserEditSubject(currentUser, s.nameId, currentClass.nameLatin));
+        if (firstEditable) {
+          onSelectSubjectId(firstEditable.id);
+        }
+      }
+    }
+  }, [currentClass.id, currentClass.nameLatin, subjects, currentUser]);
 
   // Statistics for the selected subject in this class
   const scores = studentsInClass.map((s) => s.scores[currentSubject.id] || 0);
@@ -99,6 +152,10 @@ export const TeacherGradingView: React.FC<TeacherGradingViewProps> = ({
   };
 
   const handleBatchFill = () => {
+    if (!canEditCurrentSubject) {
+      alert(`Anda (${currentUser?.name || 'Pengguna'}) tidak berhak menginput nilai untuk mata pelajaran ${currentSubject.nameId} di kelas ini.`);
+      return;
+    }
     const valStr = prompt(`Masukkan nilai default untuk semua ${studentsInClass.length} santri di kelas ${currentClass.nameLatin}:`, '75');
     if (valStr !== null) {
       const num = Math.max(0, Math.min(100, parseInt(valStr, 10) || 0));
@@ -106,6 +163,51 @@ export const TeacherGradingView: React.FC<TeacherGradingViewProps> = ({
         onUpdateScore(std.id, currentSubject.id, num);
       });
     }
+  };
+
+  const handleExportMapelExcel = () => {
+    const headerInfo = [
+      ['PESANTREN AL-GHOZALI GUNUNG SINDUR BOGOR'],
+      ['DAFTAR NILAI ASESMEN HASIL BELAJAR SANTRI'],
+      [`Mata Pelajaran: ${currentSubject.nameId} (${currentSubject.nameAr})`, '', `Kelas: ${currentClass.nameLatin}`],
+      [`Guru Pengampu: ${assignedTeachers.join(', ') || currentUser?.name || '-'}`, '', `Wali Kelas: ${currentClass.waliKelasName || '-'}`],
+      [],
+      ['No', 'NISN', 'Nama Lengkap Santri', 'Kelas', 'Nilai Angka', 'Angka Arab', 'Terbilang Arab', 'Predikat', 'Keterangan'],
+    ];
+
+    const dataRows = studentsInClass.map((s, idx) => {
+      const sc = s.scores[currentSubject.id] || 0;
+      return [
+        idx + 1,
+        s.nisn || '-',
+        s.name,
+        currentClass.nameLatin,
+        sc,
+        toEasternArabicNumerals(sc),
+        numberToArabicWords(sc),
+        getPredicate(sc).label,
+        sc >= 60 ? 'Tuntas' : 'Belum Tuntas',
+      ];
+    });
+
+    const worksheet = XLSX.utils.aoa_to_sheet([...headerInfo, ...dataRows]);
+    worksheet['!cols'] = [
+      { wch: 5 },
+      { wch: 16 },
+      { wch: 32 },
+      { wch: 16 },
+      { wch: 12 },
+      { wch: 14 },
+      { wch: 20 },
+      { wch: 20 },
+      { wch: 16 },
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Daftar Nilai');
+    const safeMapel = currentSubject.nameId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const safeKelas = currentClass.nameLatin.replace(/[^a-zA-Z0-9_-]/g, '_');
+    XLSX.writeFile(workbook, `Daftar_Nilai_${safeMapel}_${safeKelas}.xlsx`);
   };
 
   const handleExportMapelCSV = () => {
@@ -152,7 +254,9 @@ export const TeacherGradingView: React.FC<TeacherGradingViewProps> = ({
               Pilih Kelas Yang Diajar
             </h2>
             <p className="text-xs text-stone-500">
-              Pilih kelas untuk memuat seluruh daftar santri yang terdaftar
+              {isAdmin
+                ? `Menampilkan seluruh kelas di Jenjang ${effectiveJenjang}`
+                : `Menampilkan hanya kelas yang Anda ampu di Jenjang ${effectiveJenjang}`}
             </p>
           </div>
 
@@ -163,73 +267,162 @@ export const TeacherGradingView: React.FC<TeacherGradingViewProps> = ({
           </div>
         </div>
 
-        {/* Class Selection Buttons */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-          {classes.map((cls) => {
-            const isSelected = cls.id === selectedClassId;
-            const count = allStudents.length > 0
-              ? allStudents.filter((s) => (s.classId || '1a') === cls.id).length
-              : (cls.id === selectedClassId ? studentsInClass.length : 0);
-            const isPutri =
-              cls.id === '1a' ||
-              cls.id === '1b' ||
-              cls.id === '2a' ||
-              cls.id === '2b' ||
-              cls.id === '2c' ||
-              cls.id === '3a' ||
-              cls.id === '3b' ||
-              cls.id === '3c';
-            const levelNum = cls.id.startsWith('3') ? '3' : cls.id.startsWith('2') ? '2' : '1';
+        {/* Multi-Jenjang Selector (Otomatis tampil jika guru mengajar di 2 jenjang atau admin) */}
+        {availableUnits.length > 1 && onSelectJenjang && (
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-stone-900 via-stone-850 to-emerald-950 p-3.5 rounded-2xl border border-emerald-500/40 text-white mb-4 shadow-md">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-amber-400/20 border border-amber-400/40 flex items-center justify-center text-amber-300">
+                <School size={16} />
+              </div>
+              <div>
+                <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                  <Sparkles size={12} className="text-amber-400" />
+                  {isAdmin ? 'Pilih Jenjang Sekolah:' : `Anda Mengajar di ${availableUnits.length} Jenjang:`}
+                </span>
+                <span className="text-[11px] text-stone-300">
+                  {isAdmin ? 'Filter kelas berdasarkan unit' : 'Pilih jenjang untuk menampilkan kelas yang Anda ampu:'}
+                </span>
+              </div>
+            </div>
 
-            return (
-              <button
-                key={cls.id}
-                type="button"
-                onClick={() => onSelectClassId(cls.id)}
-                className={`flex flex-col items-start p-3 rounded-xl border text-left transition-all relative overflow-hidden ${
-                  isSelected
-                    ? 'border-emerald-600 bg-emerald-50/80 shadow-md ring-2 ring-emerald-500/20'
-                    : 'border-stone-200 bg-white hover:border-stone-300 hover:bg-stone-50'
-                }`}
-              >
-                <div className="flex items-center justify-between w-full">
-                  <div className="flex items-center gap-1.5">
-                    <span
-                      className={`font-extrabold text-sm ${
-                        isSelected ? 'text-emerald-900' : 'text-stone-800'
-                      }`}
-                    >
-                      {cls.nameLatin.split(' ')[0]}
+            <div className="flex items-center gap-2">
+              {availableUnits.map((unit) => (
+                <button
+                  key={unit}
+                  type="button"
+                  onClick={() => onSelectJenjang(unit)}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                    effectiveJenjang === unit
+                      ? 'bg-emerald-600 text-white shadow-lg ring-2 ring-emerald-400 font-extrabold'
+                      : 'bg-stone-800/90 text-stone-300 hover:bg-stone-750 hover:text-white border border-stone-700'
+                  }`}
+                >
+                  <span>{unit === 'SMP' ? 'SMP (Kelas 1-3)' : unit === 'SMA' ? 'SMA (Kelas 4-6)' : 'TMMIA / INT'}</span>
+                  {effectiveJenjang === unit && <CheckCircle2 size={13} className="text-amber-300" />}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Notification Bar of Displayed Classes */}
+        <div className="flex items-center justify-between bg-stone-50 border border-stone-200 px-3.5 py-2 rounded-xl mb-3 text-xs">
+          <div className="flex items-center gap-2 text-stone-700 font-semibold">
+            <Users size={14} className="text-emerald-600" />
+            <span>
+              {isAdmin
+                ? `Menampilkan ${classes.length} Kelas di Jenjang ${effectiveJenjang}`
+                : `Hanya Menampilkan ${classes.length} Kelas Yang Diampu di Jenjang ${effectiveJenjang}`}
+            </span>
+          </div>
+          <span className="text-[11px] text-stone-500 font-medium">
+            {currentUser ? `${currentUser.name} (${currentUser.role === 'guru' ? 'Guru' : currentUser.role === 'wali_kelas' ? 'Wali Kelas' : 'Admin'})` : ''}
+          </span>
+        </div>
+
+        {/* Class Selection Buttons */}
+        {classes.length === 0 ? (
+          <div className="p-8 text-center bg-stone-50 border border-dashed border-stone-300 rounded-2xl">
+            <ShieldAlert size={36} className="mx-auto text-amber-600 mb-2" />
+            <h3 className="font-bold text-stone-800 text-sm">
+              Tidak Ada Kelas yang Diampu di Jenjang {effectiveJenjang}
+            </h3>
+            <p className="text-xs text-stone-500 mt-1 max-w-md mx-auto">
+              Berdasarkan Master Penugasan Guru, Anda ({currentUser?.name || 'Guru'}) tidak memiliki jadwal mengajar pada jenjang ini.
+              {availableUnits.length > 1 && ' Silakan beralih ke tombol jenjang lain di atas untuk melihat kelas yang Anda ampu.'}
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+            {classes.map((cls) => {
+              const isSelected = cls.id === selectedClassId;
+              const count = allStudents.length > 0
+                ? allStudents.filter((s) => (s.classId || '1a') === cls.id).length
+                : (cls.id === selectedClassId ? studentsInClass.length : 0);
+              const isPutri =
+                cls.id === '1a' ||
+                cls.id === '1b' ||
+                cls.id === '2a' ||
+                cls.id === '2b' ||
+                cls.id === '2c' ||
+                cls.id === '3a' ||
+                cls.id === '3b' ||
+                cls.id === '3c' ||
+                cls.id === '4a' ||
+                cls.id === '5a' ||
+                cls.id === '5b' ||
+                cls.id === '6a' ||
+                cls.id === '6b';
+              const is1Int = cls.id === '1int';
+              const is2IntA = cls.id === '2int-a';
+              const is2IntB = cls.id === '2int-b';
+              const is2Int = is2IntA || is2IntB;
+              const is3IntA = cls.id === '3int-a';
+              const is3IntB = cls.id === '3int-b';
+              const is3Int = is3IntA || is3IntB;
+              const is4 = cls.id.startsWith('4');
+              const is5 = cls.id.startsWith('5');
+              const is6 = cls.id.startsWith('6');
+              const levelNum = is1Int ? '1 INT' : is2Int ? '2 INT' : is3Int ? '3 INT' : is4 ? '4 / 1 SMA' : is5 ? '5 / 2 SMA' : is6 ? '6 / 3 SMA' : (cls.id.startsWith('3') && !is3Int) ? '3' : cls.id.startsWith('2') ? '2' : '1';
+
+              return (
+                <button
+                  key={cls.id}
+                  type="button"
+                  onClick={() => onSelectClassId(cls.id)}
+                  className={`flex flex-col items-start p-3 rounded-xl border text-left transition-all relative overflow-hidden ${
+                    isSelected
+                      ? 'border-emerald-600 bg-emerald-50/80 shadow-md ring-2 ring-emerald-500/20'
+                      : 'border-stone-200 bg-white hover:border-stone-300 hover:bg-stone-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={`font-extrabold text-sm ${
+                          isSelected ? 'text-emerald-900' : 'text-stone-800'
+                        }`}
+                      >
+                        {is1Int ? '1 INT' : is2IntA ? '2INT.A IPA' : is2IntB ? '2INT.B IPS' : is3IntA ? '3INT.A IPA' : is3IntB ? '3INT.B IPS' : cls.id === '5a' ? '5A IPA' : cls.id === '5b' ? '5B IPS' : cls.id === '5c' ? '5C IPA' : cls.id === '5d' ? '5D IPS' : cls.id === '6a' ? '6A IPA' : cls.id === '6b' ? '6B IPS' : cls.id === '6c' ? '6C IPA' : cls.id === '6d' ? '6D IPS' : cls.nameLatin.split(' ')[0]}
+                      </span>
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                        is1Int ? 'bg-fuchsia-100 text-fuchsia-800' :
+                        is2Int ? 'bg-purple-100 text-purple-800' :
+                        is3Int ? 'bg-rose-100 text-rose-800' :
+                        is4 ? 'bg-emerald-100 text-emerald-800' :
+                        is5 ? 'bg-amber-100 text-amber-800' :
+                        is6 ? 'bg-teal-100 text-teal-800' :
+                        levelNum === '3' ? 'bg-purple-50 text-purple-700' :
+                        levelNum === '2' ? 'bg-indigo-50 text-indigo-700' : 'bg-amber-50 text-amber-700'
+                      }`}>
+                        {is1Int ? '1 INT / SMA' : is2Int ? '2 INT / SMA' : is3Int ? '3 INT / 3 SMA' : is4 ? '4 / 1 SMA' : is5 ? '5 / 2 SMA' : is6 ? '6 / 3 SMA' : `${levelNum} SMP`}
+                      </span>
+                    </div>
+                    {isSelected && (
+                      <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between w-full mt-1">
+                    <span className="font-arabic text-sm text-stone-500 font-bold" dir="rtl">
+                      {cls.nameAr}
                     </span>
-                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
-                      levelNum === '3' ? 'bg-purple-50 text-purple-700' :
-                      levelNum === '2' ? 'bg-indigo-50 text-indigo-700' : 'bg-amber-50 text-amber-700'
+                    <span className={`text-[10px] font-semibold ${
+                      is1Int || is2Int ? 'text-purple-600' : is3Int ? 'text-rose-600' : isPutri ? 'text-pink-600' : 'text-blue-600'
                     }`}>
-                      {levelNum} SMP
+                      {is1Int ? '8 Pi • 11 Pa' : is2IntA ? '4 Pi • 4 Pa (IPA)' : is2IntB ? '5 Pi • 4 Pa (IPS)' : is3IntA ? '9 Pi • 9 Pa (IPA)' : is3IntB ? '9 Pi • 7 Pa (IPS)' : cls.id === '5a' || cls.id === '6a' ? 'Putri (IPA)' : cls.id === '5b' || cls.id === '6b' ? 'Putri (IPS)' : cls.id === '5c' || cls.id === '6c' ? 'Putra (IPA)' : cls.id === '5d' || cls.id === '6d' ? 'Putra (IPS)' : isPutri ? 'Putri' : 'Putra'}
                     </span>
                   </div>
-                  {isSelected && (
-                    <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
-                  )}
-                </div>
 
-                <div className="flex items-center justify-between w-full mt-1">
-                  <span className="font-arabic text-sm text-stone-500 font-bold" dir="rtl">
-                    {cls.nameAr}
-                  </span>
-                  <span className={`text-[10px] font-semibold ${isPutri ? 'text-pink-600' : 'text-blue-600'}`}>
-                    {isPutri ? 'Putri' : 'Putra'}
-                  </span>
-                </div>
-
-                <div className="mt-2 text-[11px] font-medium text-stone-600 flex items-center gap-1">
-                  <Users size={12} className="text-stone-400" />
-                  <span>{count} Santri</span>
-                </div>
-              </button>
-            );
-          })}
-        </div>
+                  <div className="mt-2 text-[11px] font-medium text-stone-600 flex items-center gap-1">
+                    <Users size={12} className="text-stone-400" />
+                    <span>{count} Santri</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       {/* =========================================================
@@ -246,7 +439,7 @@ export const TeacherGradingView: React.FC<TeacherGradingViewProps> = ({
               Pilih Mata Pelajaran Yang Diajar di Kelas {currentClass.nameLatin}
             </h2>
             <p className="text-xs text-stone-500">
-              Pilih salah satu dari 28 materi kurikulum Pondok Modern Al-Ghozali
+              Menampilkan {subjects.length} mata pelajaran resmi kurikulum untuk kelas {currentClass.nameLatin}
             </p>
           </div>
 
@@ -261,7 +454,7 @@ export const TeacherGradingView: React.FC<TeacherGradingViewProps> = ({
                   : 'text-stone-600 hover:text-stone-900'
               }`}
             >
-              Semua (28)
+              Semua ({subjects.length})
             </button>
             <button
               type="button"
@@ -272,7 +465,7 @@ export const TeacherGradingView: React.FC<TeacherGradingViewProps> = ({
                   : 'text-stone-600 hover:text-stone-900'
               }`}
             >
-              Pondok (10)
+              Pondok ({subjects.filter((s) => s.category === 'pondok').length})
             </button>
             <button
               type="button"
@@ -283,66 +476,92 @@ export const TeacherGradingView: React.FC<TeacherGradingViewProps> = ({
                   : 'text-stone-600 hover:text-stone-900'
               }`}
             >
-              Umum (15)
+              Umum ({subjects.filter((s) => s.category === 'umum').length})
             </button>
-            <button
-              type="button"
-              onClick={() => setCategoryFilter('lisan')}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                categoryFilter === 'lisan'
-                  ? 'bg-white text-stone-900 shadow-xs'
-                  : 'text-stone-600 hover:text-stone-900'
-              }`}
-            >
-              Lisan (3)
-            </button>
+            {subjects.some((s) => s.category === 'lisan') && (
+              <button
+                type="button"
+                onClick={() => setCategoryFilter('lisan')}
+                className={`px-3 py-1.5 rounded-lg transition ${
+                  categoryFilter === 'lisan'
+                    ? 'bg-white text-stone-900 shadow-xs'
+                    : 'text-stone-600 hover:text-stone-900'
+                }`}
+              >
+                Lisan ({subjects.filter((s) => s.category === 'lisan').length})
+              </button>
+            )}
           </div>
         </div>
 
         {/* Subjects Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2 max-h-56 overflow-y-auto pr-1">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2 max-h-64 overflow-y-auto pr-1">
           {filteredSubjects.map((sub) => {
             const isSelected = sub.id === selectedSubjectId;
+            const isTaughtByMe = canUserEditSubject(currentUser, sub.nameId, currentClass.nameLatin);
+            const teachersForSub = findTeachersForSubjectAndClass(sub.nameId, currentClass.nameLatin);
+
             return (
               <button
                 key={sub.id}
                 type="button"
                 onClick={() => onSelectSubjectId(sub.id)}
-                className={`p-2.5 rounded-xl border text-left transition flex flex-col justify-between ${
+                className={`p-2.5 rounded-xl border text-left transition flex flex-col justify-between relative ${
                   isSelected
                     ? 'border-emerald-600 bg-emerald-600 text-white shadow-md'
+                    : isTaughtByMe && currentUser?.role === 'guru'
+                    ? 'border-emerald-300 bg-emerald-50/70 hover:bg-emerald-100 text-stone-800 ring-1 ring-emerald-400/30'
                     : 'border-stone-200 bg-stone-50/70 hover:bg-stone-100 text-stone-800'
                 }`}
               >
-                <div className="flex items-center justify-between text-[11px] mb-1">
-                  <span
-                    className={`font-mono px-1.5 py-0.2 rounded font-bold text-[10px] ${
-                      isSelected ? 'bg-white/20 text-white' : 'bg-stone-200 text-stone-700'
+                <div>
+                  <div className="flex items-center justify-between text-[11px] mb-1">
+                    <span
+                      className={`font-mono px-1.5 py-0.2 rounded font-bold text-[10px] ${
+                        isSelected ? 'bg-white/20 text-white' : 'bg-stone-200 text-stone-700'
+                      }`}
+                    >
+                      #{sub.order}
+                    </span>
+                    <span
+                      className={`text-[9.5px] uppercase font-bold ${
+                        isSelected ? 'text-emerald-100' : 'text-stone-400'
+                      }`}
+                    >
+                      {sub.category}
+                    </span>
+                  </div>
+
+                  <div className="text-xs font-bold truncate" title={sub.nameId}>
+                    {sub.nameId}
+                  </div>
+
+                  <div
+                    className={`font-arabic text-xs mt-0.5 text-right truncate ${
+                      isSelected ? 'text-emerald-100' : 'text-stone-500'
                     }`}
+                    dir="rtl"
                   >
-                    #{sub.order}
-                  </span>
-                  <span
-                    className={`text-[9.5px] uppercase font-bold ${
-                      isSelected ? 'text-emerald-100' : 'text-stone-400'
-                    }`}
-                  >
-                    {sub.category}
-                  </span>
+                    {sub.nameAr}
+                  </div>
                 </div>
 
-                <div className="text-xs font-bold truncate" title={sub.nameId}>
-                  {sub.nameId}
-                </div>
-
-                <div
-                  className={`font-arabic text-xs mt-1 text-right truncate ${
-                    isSelected ? 'text-emerald-100' : 'text-stone-500'
-                  }`}
-                  dir="rtl"
-                >
-                  {sub.nameAr}
-                </div>
+                {/* Teacher ownership badge */}
+                {currentUser?.role === 'guru' && (
+                  <div className="mt-2 pt-1 border-t border-black/5 flex items-center justify-between text-[9.5px]">
+                    {isTaughtByMe ? (
+                      <span className={`inline-flex items-center gap-0.5 font-bold ${isSelected ? 'text-amber-300' : 'text-emerald-700'}`}>
+                        <CheckCircle2 size={10} />
+                        <span>Diampu Anda</span>
+                      </span>
+                    ) : (
+                      <span className={`inline-flex items-center gap-0.5 truncate ${isSelected ? 'text-emerald-200' : 'text-stone-400'}`} title={`Diampu: ${teachersForSub[0] || 'Guru Lain'}`}>
+                        <Lock size={9} />
+                        <span className="truncate">{teachersForSub[0] ? teachersForSub[0].split(' ')[0] : 'Lain'}</span>
+                      </span>
+                    )}
+                  </div>
+                )}
               </button>
             );
           })}
@@ -373,6 +592,24 @@ export const TeacherGradingView: React.FC<TeacherGradingViewProps> = ({
               <p className="text-xs text-stone-500 mt-0.5">
                 Menampilkan seluruh {studentsInClass.length} santri di kelas {currentClass.nameLatin}. Tekan Enter/Panah Bawah untuk pindah ke santri berikutnya.
               </p>
+
+              {/* Guru Pengampu dari Database Guru */}
+              {assignedTeachers.length > 0 && (
+                <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                  <span className="text-xs text-stone-500 font-medium flex items-center gap-1">
+                    <GraduationCap size={13} className="text-emerald-700" />
+                    Guru Pengampu:
+                  </span>
+                  {assignedTeachers.map((guru) => (
+                    <span
+                      key={guru}
+                      className="bg-emerald-50 text-emerald-900 border border-emerald-200/80 px-2 py-0.5 rounded-md text-[11px] font-semibold flex items-center gap-1"
+                    >
+                      <span>{guru}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Teacher Quick Action Buttons */}
@@ -384,6 +621,16 @@ export const TeacherGradingView: React.FC<TeacherGradingViewProps> = ({
               >
                 <Sparkles size={14} className="text-amber-500" />
                 Isi Cepat Nilai
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExportMapelExcel}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-emerald-800 hover:bg-emerald-900 text-white rounded-lg shadow-sm transition"
+                title="Download Lembar Nilai Format Microsoft Excel (.xlsx)"
+              >
+                <FileSpreadsheet size={14} />
+                Export Excel (.xlsx)
               </button>
 
               <button
@@ -455,7 +702,7 @@ export const TeacherGradingView: React.FC<TeacherGradingViewProps> = ({
         </div>
 
         {/* Student Search & Table Toolbar */}
-        <div className="no-print p-3 bg-stone-50 border-b border-stone-200 flex items-center justify-between">
+        <div className="no-print p-3 bg-stone-50 border-b border-stone-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={15} />
             <input
@@ -467,10 +714,27 @@ export const TeacherGradingView: React.FC<TeacherGradingViewProps> = ({
             />
           </div>
 
-          <span className="text-xs text-stone-500 font-medium">
-            KKM Standar: <strong>60</strong>
-          </span>
+          <div className="flex items-center gap-3">
+            {!canEditCurrentSubject && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-100/80 px-2.5 py-1 rounded-md border border-amber-300/80">
+                <Lock size={12} />
+                <span>Mode Hanya-Lihat (Bukan Pengampu)</span>
+              </span>
+            )}
+            <span className="text-xs text-stone-500 font-medium">
+              KKM Standar: <strong>60</strong>
+            </span>
+          </div>
         </div>
+
+        {!canEditCurrentSubject && (
+          <div className="no-print mx-4 my-3 p-3 bg-amber-50/90 border border-amber-300/70 rounded-xl text-amber-900 text-xs flex items-center gap-2.5">
+            <Lock size={16} className="text-amber-700 shrink-0" />
+            <span>
+              <strong>Perhatian Otoritas Pengajar:</strong> Anda ({currentUser?.name}) tidak terdaftar sebagai pengampu mata pelajaran <strong>{currentSubject.nameId}</strong> di kelas <strong>{currentClass.nameLatin}</strong>. Kolom nilai dalam mode hanya-baca untuk menjaga integritas data.
+            </span>
+          </div>
+        )}
 
         {/* Table of Students in the Selected Class */}
         <div className="overflow-x-auto">
@@ -537,14 +801,18 @@ export const TeacherGradingView: React.FC<TeacherGradingViewProps> = ({
                             type="number"
                             min="0"
                             max="100"
+                            disabled={!canEditCurrentSubject}
                             value={score}
                             onChange={(e) => {
                               const val = Math.max(0, Math.min(100, parseInt(e.target.value, 10) || 0));
                               onUpdateScore(student.id, currentSubject.id, val);
                             }}
                             onKeyDown={(e) => handleKeyDown(e, index)}
+                            title={!canEditCurrentSubject ? 'Hanya Guru Pengampu resmi yang berhak mengedit nilai ini' : undefined}
                             className={`w-16 text-center font-mono font-extrabold text-sm py-1 border rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs transition ${
-                              score < 60
+                              !canEditCurrentSubject
+                                ? 'bg-stone-100 border-stone-300 text-stone-500 cursor-not-allowed'
+                                : score < 60
                                 ? 'border-red-400 bg-red-50 text-red-700'
                                 : 'border-stone-300 bg-white text-stone-900'
                             }`}

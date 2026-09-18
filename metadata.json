@@ -1,6 +1,6 @@
 {
   "name": "Kasyfud Darajat - Raport Pondok Modern Al-Ghozali",
-  "description": "Aplikasi Cetak Raport Kasyfud Darajat dan Rekapitulasi Nilai Asesmen Sumatif Pondok Modern Al-Ghozali",
+  "description": "Aplikasi Cetak Raport Kasyfud Darajat, Rekapitulasi Nilai, Muatan Kurikulum, dan Database Guru Mata Pelajaran Pondok Modern Al-Ghozali",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

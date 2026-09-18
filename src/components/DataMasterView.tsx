@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { CalculatedStudent, ClassItem } from '../types';
-import { Search, Users, Printer, Download, PenTool, FileText, Plus, CheckCircle2, GraduationCap } from 'lucide-react';
+import { Search, Users, Printer, Download, PenTool, FileText, Plus, CheckCircle2, GraduationCap, FileSpreadsheet } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 interface DataMasterViewProps {
   students: CalculatedStudent[];
@@ -26,15 +27,31 @@ export const DataMasterView: React.FC<DataMasterViewProps> = ({
   onNavigateToRaport,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedLevel, setSelectedLevel] = useState<'all' | '1' | '2' | '3'>('all');
+  const [selectedLevel, setSelectedLevel] = useState<'all' | '1' | '2' | '3' | '1int' | '2int' | '4' | '3int' | '5' | '6'>('all');
   const [filterClass, setFilterClass] = useState<string>('all');
+
+  const isClassLevel1 = (cId: string) => cId === '1a' || cId === '1b' || cId === '1d' || cId === '1e';
+  const isClassLevel2 = (cId: string) => cId.startsWith('2') && !cId.startsWith('2int');
+  const isClassLevel3 = (cId: string) => cId.startsWith('3') && !cId.startsWith('3int');
+  const isClassLevel1Int = (cId: string) => cId === '1int' || cId.startsWith('1-int');
+  const isClassLevel2Int = (cId: string) => cId.startsWith('2int');
+  const isClassLevel4 = (cId: string) => cId.startsWith('4');
+  const isClassLevel3Int = (cId: string) => cId.startsWith('3int');
+  const isClassLevel5 = (cId: string) => cId.startsWith('5');
+  const isClassLevel6 = (cId: string) => cId.startsWith('6');
 
   // Filter classes shown in selector cards based on selected level
   const displayedClasses = classes.filter((c) => {
     if (selectedLevel === 'all') return true;
-    if (selectedLevel === '1') return c.id.startsWith('1');
-    if (selectedLevel === '2') return c.id.startsWith('2');
-    if (selectedLevel === '3') return c.id.startsWith('3');
+    if (selectedLevel === '1') return isClassLevel1(c.id);
+    if (selectedLevel === '2') return isClassLevel2(c.id);
+    if (selectedLevel === '3') return isClassLevel3(c.id);
+    if (selectedLevel === '1int') return isClassLevel1Int(c.id);
+    if (selectedLevel === '2int') return isClassLevel2Int(c.id);
+    if (selectedLevel === '4') return isClassLevel4(c.id);
+    if (selectedLevel === '3int') return isClassLevel3Int(c.id);
+    if (selectedLevel === '5') return isClassLevel5(c.id);
+    if (selectedLevel === '6') return isClassLevel6(c.id);
     return true;
   });
 
@@ -43,9 +60,15 @@ export const DataMasterView: React.FC<DataMasterViewProps> = ({
     const cId = s.classId || '1a';
     const matchesLevel =
       selectedLevel === 'all' ||
-      (selectedLevel === '1' && cId.startsWith('1')) ||
-      (selectedLevel === '2' && cId.startsWith('2')) ||
-      (selectedLevel === '3' && cId.startsWith('3'));
+      (selectedLevel === '1' && isClassLevel1(cId)) ||
+      (selectedLevel === '2' && isClassLevel2(cId)) ||
+      (selectedLevel === '3' && isClassLevel3(cId)) ||
+      (selectedLevel === '1int' && isClassLevel1Int(cId)) ||
+      (selectedLevel === '2int' && isClassLevel2Int(cId)) ||
+      (selectedLevel === '4' && isClassLevel4(cId)) ||
+      (selectedLevel === '3int' && isClassLevel3Int(cId)) ||
+      (selectedLevel === '5' && isClassLevel5(cId)) ||
+      (selectedLevel === '6' && isClassLevel6(cId));
 
     const matchesClass = filterClass === 'all' || cId === filterClass;
 
@@ -57,18 +80,68 @@ export const DataMasterView: React.FC<DataMasterViewProps> = ({
   });
 
   // Counts
-  const countLevel1 = students.filter((s) => (s.classId || '1a').startsWith('1')).length;
-  const countLevel2 = students.filter((s) => (s.classId || '1a').startsWith('2')).length;
-  const countLevel3 = students.filter((s) => (s.classId || '1a').startsWith('3')).length;
+  const countLevel1 = students.filter((s) => isClassLevel1(s.classId || '1a')).length;
+  const countLevel2 = students.filter((s) => isClassLevel2(s.classId || '1a')).length;
+  const countLevel3 = students.filter((s) => isClassLevel3(s.classId || '1a')).length;
+  const countLevel1Int = students.filter((s) => isClassLevel1Int(s.classId || '1a')).length;
+  const countLevel2Int = students.filter((s) => isClassLevel2Int(s.classId || '1a')).length;
+  const countLevel4 = students.filter((s) => isClassLevel4(s.classId || '1a')).length;
+  const countLevel3Int = students.filter((s) => isClassLevel3Int(s.classId || '1a')).length;
+  const countLevel5 = students.filter((s) => isClassLevel5(s.classId || '1a')).length;
+  const countLevel6 = students.filter((s) => isClassLevel6(s.classId || '1a')).length;
 
   const classCountMap: Record<string, number> = {};
   classes.forEach((c) => {
     classCountMap[c.id] = students.filter((s) => (s.classId || '1a') === c.id).length;
   });
 
-  const handleLevelChange = (level: 'all' | '1' | '2' | '3') => {
+  const handleLevelChange = (level: 'all' | '1' | '2' | '3' | '1int' | '2int' | '4' | '3int' | '5' | '6') => {
     setSelectedLevel(level);
     setFilterClass('all');
+  };
+
+  const handleExportExcel = () => {
+    const headerInfo = [
+      ['DATA MASTER SANTRI PESANTREN AL-GHOZALI GUNUNG SINDUR'],
+      [`Tingkat / Filter: ${selectedLevel.toUpperCase()}`, `Kelas: ${filterClass}`],
+      [`Jumlah Santri: ${filteredStudents.length}`, `Tanggal: ${new Date().toLocaleDateString('id-ID')}`],
+      [],
+      ['NO', 'NISN', 'NAMA LENGKAP', 'KELAS', 'JENJANG', 'TOTAL NILAI', 'RATA-RATA', 'PERINGKAT', 'STATUS'],
+    ];
+
+    const dataRows = filteredStudents.map((s, idx) => {
+      const cls = classes.find((c) => c.id === s.classId)?.nameLatin || s.classId || '-';
+      const jenjang = (s.classId || '').startsWith('4') || (s.classId || '').startsWith('5') || (s.classId || '').startsWith('6') || (s.classId || '').startsWith('3int') ? 'SMA' : 'SMP';
+      return [
+        idx + 1,
+        s.nisn,
+        s.name,
+        cls,
+        jenjang,
+        s.totalScore,
+        s.averageScore,
+        s.rank,
+        s.keterangan || 'Tuntas',
+      ];
+    });
+
+    const worksheet = XLSX.utils.aoa_to_sheet([...headerInfo, ...dataRows]);
+    worksheet['!cols'] = [
+      { wch: 5 },
+      { wch: 16 },
+      { wch: 32 },
+      { wch: 18 },
+      { wch: 10 },
+      { wch: 12 },
+      { wch: 12 },
+      { wch: 12 },
+      { wch: 14 },
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Data Santri');
+    const levelLabel = selectedLevel === 'all' ? 'Semua' : `Kelas_${selectedLevel}`;
+    XLSX.writeFile(workbook, `Data_Master_Santri_${levelLabel}_${filterClass}.xlsx`);
   };
 
   const handleExportCSV = () => {
@@ -102,7 +175,69 @@ export const DataMasterView: React.FC<DataMasterViewProps> = ({
     window.print();
   };
 
-  const isGirlStudent = (classId: string) => {
+  const isGirlStudent = (classId: string, nisn?: string) => {
+    if (classId === '1int') {
+      const putriNisns = new Set([
+        '3114863309',
+        '3119640430',
+        '0107709853',
+        '0115850447',
+        '3094791920',
+        '3119922193',
+        '3111516654',
+        '3111110408',
+      ]);
+      return nisn ? putriNisns.has(nisn) : false;
+    }
+    if (classId.startsWith('2int')) {
+      const putriNisns2Int = new Set([
+        '0103255017',
+        '0095965349',
+        '0104195595',
+        '3098541367',
+        '0091056538',
+        '0105906811',
+        '0099177353',
+        '0103142617',
+        '0105821200',
+      ]);
+      return nisn ? putriNisns2Int.has(nisn) : false;
+    }
+    if (classId?.startsWith('3int')) {
+      const putriNisns3Int = new Set([
+        '0085039026',
+        '3089912917',
+        '0097895365',
+        '0096200281',
+        '0089266284',
+        '0089172498',
+        '0082188432',
+        '0097122723',
+        '0087581911',
+        '0094678715',
+        '0076764420',
+        '3097728311',
+        '0091344448',
+        '0061177019',
+        '3073603106',
+        '3086240194',
+        '0094070304',
+        '0097971201',
+      ]);
+      return nisn ? putriNisns3Int.has(nisn) : false;
+    }
+    if (classId === '5a' || classId === '5b') {
+      return true; // 5A IPA Putri & 5B IPS Putri
+    }
+    if (classId === '5c' || classId === '5d') {
+      return false; // 5C IPA Putra & 5D IPS Putra
+    }
+    if (classId === '6a' || classId === '6b') {
+      return true; // 6A IPA Putri & 6B IPS Putri
+    }
+    if (classId === '6c' || classId === '6d') {
+      return false; // 6C IPA Putra & 6D IPS Putra
+    }
     return (
       classId === '1a' ||
       classId === '1b' ||
@@ -111,7 +246,8 @@ export const DataMasterView: React.FC<DataMasterViewProps> = ({
       classId === '2c' ||
       classId === '3a' ||
       classId === '3b' ||
-      classId === '3c'
+      classId === '3c' ||
+      classId === '4a'
     );
   };
 
@@ -127,13 +263,13 @@ export const DataMasterView: React.FC<DataMasterViewProps> = ({
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-xl font-black text-stone-900 tracking-tight">
-                  Data Master Siswa SMP
+                  Data Master Siswa SMP & SMA
                 </h2>
                 <span className="bg-emerald-100 text-emerald-800 text-xs font-extrabold px-2.5 py-0.5 rounded-full">
                   {students.length} Siswa Terdaftar
                 </span>
                 <span className="bg-blue-50 text-blue-700 text-xs font-semibold px-2 py-0.5 rounded-full border border-blue-200">
-                  Kelas 1: {countLevel1} | Kelas 2: {countLevel2} | Kelas 3: {countLevel3}
+                  1 SMP: {countLevel1} | 2 SMP: {countLevel2} | 3 SMP: {countLevel3} | 1 INT: {countLevel1Int} | 2 INT: {countLevel2Int} | 4 SMA: {countLevel4} | 3 INT: {countLevel3Int} | 5 SMA: {countLevel5} | 6 SMA: {countLevel6}
                 </span>
               </div>
               <p className="text-xs text-stone-500 mt-1">
@@ -143,6 +279,15 @@ export const DataMasterView: React.FC<DataMasterViewProps> = ({
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold bg-emerald-800 hover:bg-emerald-900 text-white rounded-lg shadow-sm transition"
+              title="Download Data Master Format Excel (.xlsx)"
+            >
+              <FileSpreadsheet size={14} />
+              <span>Export Excel (.xlsx)</span>
+            </button>
             <button
               type="button"
               onClick={handleExportCSV}
@@ -170,7 +315,7 @@ export const DataMasterView: React.FC<DataMasterViewProps> = ({
           </div>
         </div>
 
-        {/* Level Tabs: Semua Jenjang / Kelas 1 SMP / Kelas 2 SMP / Kelas 3 SMP */}
+        {/* Level Tabs */}
         <div className="flex items-center gap-2 mt-6 pt-5 border-t border-stone-100 overflow-x-auto">
           <span className="text-xs font-bold text-stone-500 uppercase tracking-wider mr-1 flex items-center gap-1">
             <GraduationCap size={15} className="text-emerald-600" />
@@ -196,7 +341,7 @@ export const DataMasterView: React.FC<DataMasterViewProps> = ({
                 : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
             }`}
           >
-            Kelas 1 SMP ({countLevel1} Siswa)
+            Kelas 1 SMP ({countLevel1})
           </button>
           <button
             type="button"
@@ -207,7 +352,7 @@ export const DataMasterView: React.FC<DataMasterViewProps> = ({
                 : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
             }`}
           >
-            Kelas 2 SMP ({countLevel2} Siswa)
+            Kelas 2 SMP ({countLevel2})
           </button>
           <button
             type="button"
@@ -218,7 +363,73 @@ export const DataMasterView: React.FC<DataMasterViewProps> = ({
                 : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
             }`}
           >
-            Kelas 3 SMP ({countLevel3} Siswa)
+            Kelas 3 SMP ({countLevel3})
+          </button>
+          <button
+            type="button"
+            onClick={() => handleLevelChange('1int')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap ${
+              selectedLevel === '1int'
+                ? 'bg-purple-700 text-white shadow-sm'
+                : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+            }`}
+          >
+            1 Intensif / 1 SMA ({countLevel1Int})
+          </button>
+          <button
+            type="button"
+            onClick={() => handleLevelChange('2int')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap ${
+              selectedLevel === '2int'
+                ? 'bg-purple-700 text-white shadow-sm'
+                : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+            }`}
+          >
+            2 Intensif / 2 SMA ({countLevel2Int})
+          </button>
+          <button
+            type="button"
+            onClick={() => handleLevelChange('4')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap ${
+              selectedLevel === '4'
+                ? 'bg-emerald-800 text-white shadow-sm'
+                : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+            }`}
+          >
+            Kelas 4 / 1 SMA ({countLevel4})
+          </button>
+          <button
+            type="button"
+            onClick={() => handleLevelChange('3int')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap ${
+              selectedLevel === '3int'
+                ? 'bg-rose-700 text-white shadow-sm'
+                : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+            }`}
+          >
+            3 Intensif / 3 SMA ({countLevel3Int})
+          </button>
+          <button
+            type="button"
+            onClick={() => handleLevelChange('5')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap ${
+              selectedLevel === '5'
+                ? 'bg-amber-700 text-white shadow-sm'
+                : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+            }`}
+          >
+            Kelas 5 / 2 SMA ({countLevel5})
+          </button>
+          <button
+            type="button"
+            onClick={() => handleLevelChange('6')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap ${
+              selectedLevel === '6'
+                ? 'bg-teal-700 text-white shadow-sm'
+                : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+            }`}
+          >
+            Kelas 6 / 3 SMA ({countLevel6})
           </button>
         </div>
 
@@ -241,7 +452,19 @@ export const DataMasterView: React.FC<DataMasterViewProps> = ({
                 ? countLevel1
                 : selectedLevel === '2'
                 ? countLevel2
-                : countLevel3}{' '}
+                : selectedLevel === '3'
+                ? countLevel3
+                : selectedLevel === '1int'
+                ? countLevel1Int
+                : selectedLevel === '2int'
+                ? countLevel2Int
+                : selectedLevel === '4'
+                ? countLevel4
+                : selectedLevel === '3int'
+                ? countLevel3Int
+                : selectedLevel === '5'
+                ? countLevel5
+                : countLevel6}{' '}
               Siswa
             </div>
             <div className="text-[10px] text-stone-400 mt-0.5">Tampilkan Semua</div>
@@ -251,6 +474,11 @@ export const DataMasterView: React.FC<DataMasterViewProps> = ({
             const count = classCountMap[c.id] || 0;
             const isSelected = filterClass === c.id;
             const isPutri = isGirlStudent(c.id);
+            const is1Int = c.id === '1int';
+            const is2IntA = c.id === '2int-a';
+            const is2IntB = c.id === '2int-b';
+            const is3IntA = c.id === '3int-a';
+            const is3IntB = c.id === '3int-b';
 
             return (
               <button
@@ -267,14 +495,36 @@ export const DataMasterView: React.FC<DataMasterViewProps> = ({
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-extrabold text-stone-700">{c.nameLatin.split(' ')[0]}</span>
+                  <span className="text-xs font-extrabold text-stone-700">
+                    {c.id === '1int' ? '1 INT' : c.id === '2int-a' ? '2INT.A IPA' : c.id === '2int-b' ? '2INT.B IPS' : c.id === '3int-a' ? '3INT.A IPA' : c.id === '3int-b' ? '3INT.B IPS' : c.id === '4a' ? '4A' : c.id === '4b' ? '4B' : c.id === '4c' ? '4C' : c.id === '5a' ? '5A IPA' : c.id === '5b' ? '5B IPS' : c.id === '5c' ? '5C IPA' : c.id === '5d' ? '5D IPS' : c.id === '6a' ? '6A IPA' : c.id === '6b' ? '6B IPS' : c.id === '6c' ? '6C IPA' : c.id === '6d' ? '6D IPS' : c.nameLatin.split(' ')[0]}
+                  </span>
                   <span className="font-arabic text-xs text-emerald-700 font-bold">{c.nameAr}</span>
                 </div>
                 <div className="text-base font-black text-stone-800 mt-0.5">{count} Siswa</div>
                 <div className="text-[10px] font-medium text-stone-400 truncate mt-0.5">
-                  <span className={isPutri ? 'text-pink-600 font-semibold' : 'text-blue-600 font-semibold'}>
-                    {isPutri ? 'Putri' : 'Putra'}
-                  </span>
+                  {is1Int ? (
+                    <span className="text-purple-600 font-semibold">8 Putri • 11 Putra</span>
+                  ) : is2IntA ? (
+                    <span className="text-purple-600 font-semibold">4 Pi • 4 Pa (IPA)</span>
+                  ) : is2IntB ? (
+                    <span className="text-purple-600 font-semibold">5 Pi • 4 Pa (IPS)</span>
+                  ) : is3IntA ? (
+                    <span className="text-rose-600 font-semibold">9 Pi • 9 Pa (IPA)</span>
+                  ) : is3IntB ? (
+                    <span className="text-rose-600 font-semibold">9 Pi • 7 Pa (IPS)</span>
+                  ) : c.id === '5a' || c.id === '6a' ? (
+                    <span className="text-pink-600 font-semibold">Putri (IPA)</span>
+                  ) : c.id === '5b' || c.id === '6b' ? (
+                    <span className="text-pink-600 font-semibold">Putri (IPS)</span>
+                  ) : c.id === '5c' || c.id === '6c' ? (
+                    <span className="text-blue-600 font-semibold">Putra (IPA)</span>
+                  ) : c.id === '5d' || c.id === '6d' ? (
+                    <span className="text-blue-600 font-semibold">Putra (IPS)</span>
+                  ) : (
+                    <span className={isPutri ? 'text-pink-600 font-semibold' : 'text-blue-600 font-semibold'}>
+                      {isPutri ? 'Putri' : 'Putra'}
+                    </span>
+                  )}
                 </div>
               </button>
             );
@@ -342,7 +592,7 @@ export const DataMasterView: React.FC<DataMasterViewProps> = ({
               ) : (
                 filteredStudents.map((std, index) => {
                   const studentClass = classes.find((c) => c.id === std.classId);
-                  const isFemale = isGirlStudent(std.classId || '1a');
+                  const isFemale = isGirlStudent(std.classId || '1a', std.nisn);
 
                   return (
                     <tr key={std.id} className="hover:bg-emerald-50/40 transition">
@@ -368,7 +618,7 @@ export const DataMasterView: React.FC<DataMasterViewProps> = ({
                       </td>
                       <td className="py-2.5 px-3 text-center">
                         <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-stone-100 text-stone-700 border border-stone-200">
-                          {studentClass?.nameLatin.split(' ')[0] || std.classId?.toUpperCase() || '1A'}
+                          {std.classId === '1int' ? '1 INT' : std.classId === '2int-a' ? '2INT.A IPA' : std.classId === '2int-b' ? '2INT.B IPS' : std.classId === '3int-a' ? '3INT.A IPA' : std.classId === '3int-b' ? '3INT.B IPS' : std.classId === '4a' ? '4A' : std.classId === '4b' ? '4B' : std.classId === '4c' ? '4C' : std.classId === '5a' ? '5A IPA' : std.classId === '5b' ? '5B IPS' : std.classId === '5c' ? '5C IPA' : std.classId === '5d' ? '5D IPS' : std.classId === '6a' ? '6A IPA' : std.classId === '6b' ? '6B IPS' : std.classId === '6c' ? '6C IPA' : std.classId === '6d' ? '6D IPS' : (studentClass?.nameLatin.split(' ')[0] || std.classId?.toUpperCase() || '1A')}
                         </span>
                       </td>
                       <td className="py-2.5 px-3 text-center font-mono font-bold text-stone-800">

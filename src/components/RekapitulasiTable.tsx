@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
-import { Subject, CalculatedStudent, SchoolConfig, ClassItem } from '../types';
-import { Printer, Download, Plus, RotateCcw, ExternalLink, Edit3, Trash2, Search, Filter } from 'lucide-react';
+import { Subject, CalculatedStudent, SchoolConfig, ClassItem, AuthUser } from '../types';
+import { getSubjectsForClass } from '../data/curriculumSubjects';
+import { Printer, Download, Plus, RotateCcw, ExternalLink, Edit3, Trash2, Search, Filter, FileSpreadsheet } from 'lucide-react';
+import { canUserEditSubject } from '../utils/authHelpers';
+import { exportRekapToExcel } from '../utils/exportHelpers';
 
 interface RekapitulasiTableProps {
   students: CalculatedStudent[];
@@ -14,6 +17,7 @@ interface RekapitulasiTableProps {
   onDeleteStudent: (studentId: string) => void;
   onSelectStudentForRaport: (studentIndex: number) => void;
   onResetData: () => void;
+  currentUser?: AuthUser | null;
 }
 
 export const RekapitulasiTable: React.FC<RekapitulasiTableProps> = ({
@@ -28,14 +32,19 @@ export const RekapitulasiTable: React.FC<RekapitulasiTableProps> = ({
   onDeleteStudent,
   onSelectStudentForRaport,
   onResetData,
+  currentUser = null,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [editingCell, setEditingCell] = useState<{ studentId: string; subjectId: string } | null>(null);
   const [tempValue, setTempValue] = useState<string>('');
 
-  const pondokSubjects = subjects.filter((s) => s.category === 'pondok');
-  const umumSubjects = subjects.filter((s) => s.category === 'umum');
-  const lisanSubjects = subjects.filter((s) => s.category === 'lisan');
+  const effectiveSubjects = (selectedClassId && selectedClassId !== 'all')
+    ? getSubjectsForClass(selectedClassId)
+    : subjects;
+
+  const pondokSubjects = effectiveSubjects.filter((s) => s.category === 'pondok');
+  const umumSubjects = effectiveSubjects.filter((s) => s.category === 'umum');
+  const lisanSubjects = effectiveSubjects.filter((s) => s.category === 'lisan');
 
   const filteredStudents = students.filter(
     (s) =>
@@ -46,6 +55,13 @@ export const RekapitulasiTable: React.FC<RekapitulasiTableProps> = ({
 
 
   const startEditing = (studentId: string, subjectId: string, currentVal: number) => {
+    const student = students.find((s) => s.id === studentId);
+    const studentClassId = student?.classId || selectedClassId || '1a';
+    const sub = subjects.find((s) => s.id === subjectId);
+    if (sub && !canUserEditSubject(currentUser, sub.nameId, studentClassId)) {
+      alert(`Anda (${currentUser?.name || 'Pengguna'}) tidak berhak menginput atau mengubah nilai untuk mata pelajaran ${sub.nameId} di kelas ini.`);
+      return;
+    }
     setEditingCell({ studentId, subjectId });
     setTempValue(String(currentVal || ''));
   };
@@ -56,23 +72,28 @@ export const RekapitulasiTable: React.FC<RekapitulasiTableProps> = ({
     setEditingCell(null);
   };
 
+  const handleExportExcel = () => {
+    const currentClass = classes.find((c) => c.id === selectedClassId);
+    exportRekapToExcel(filteredStudents, effectiveSubjects, config, currentClass);
+  };
+
   const handleExportCSV = () => {
     const headers = [
       'No',
       'Nama',
       'NISN',
-      ...subjects.map((s) => s.nameId),
+      ...effectiveSubjects.map((s) => s.nameId),
       'Jumlah',
       'Rata-rata',
       'Ranking',
       'Keterangan',
     ];
 
-    const rows = students.map((s, idx) => [
+    const rows = filteredStudents.map((s, idx) => [
       idx + 1,
       `"${s.name}"`,
       `"${s.nisn}"`,
-      ...subjects.map((sub) => s.scores[sub.id] || 0),
+      ...effectiveSubjects.map((sub) => s.scores[sub.id] || 0),
       s.totalScore,
       s.averageScore,
       s.rank,
@@ -104,32 +125,16 @@ export const RekapitulasiTable: React.FC<RekapitulasiTableProps> = ({
               <Filter size={13} className="text-emerald-600" />
               <span className="text-[11px] text-stone-500 font-medium">Kelas:</span>
               <select
-                value={selectedClassId || 'all'}
+                value={selectedClassId || (classes[0]?.id || 'all')}
                 onChange={(e) => onSelectClassId(e.target.value)}
                 className="text-xs font-bold text-stone-800 bg-transparent focus:outline-none cursor-pointer"
               >
-                <option value="all">Semua Kelas</option>
-                <optgroup label="Kelas 1 SMP">
-                  {classes.filter(c => c.id.startsWith('1')).map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.nameLatin} ({c.nameAr})
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="Kelas 2 SMP">
-                  {classes.filter(c => c.id.startsWith('2')).map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.nameLatin} ({c.nameAr})
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="Kelas 3 SMP">
-                  {classes.filter(c => c.id.startsWith('3')).map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.nameLatin} ({c.nameAr})
-                    </option>
-                  ))}
-                </optgroup>
+                {currentUser?.role === 'admin' && <option value="all">Semua Kelas</option>}
+                {classes.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nameLatin} ({c.nameAr})
+                  </option>
+                ))}
               </select>
             </div>
           )}
@@ -162,11 +167,22 @@ export const RekapitulasiTable: React.FC<RekapitulasiTableProps> = ({
 
           <button
             type="button"
-            onClick={handleExportCSV}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-white hover:bg-stone-100 text-stone-700 border border-stone-300 rounded-lg transition"
+            onClick={handleExportExcel}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-emerald-800 hover:bg-emerald-900 text-white rounded-lg shadow-sm transition"
+            title="Download Rekap Nilai ke format Microsoft Excel (.xlsx)"
           >
-            <Download size={14} />
-            Export CSV
+            <FileSpreadsheet size={14} />
+            Export Excel (.xlsx)
+          </button>
+
+          <button
+            type="button"
+            onClick={handleExportCSV}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium bg-white hover:bg-stone-100 text-stone-700 border border-stone-300 rounded-lg transition"
+            title="Download Rekap Nilai format CSV"
+          >
+            <Download size={13} />
+            CSV
           </button>
 
           <button
@@ -181,7 +197,7 @@ export const RekapitulasiTable: React.FC<RekapitulasiTableProps> = ({
           <button
             type="button"
             onClick={onResetData}
-            title="Kembalikan data santri default 1 INT A"
+            title="Kembalikan data santri default"
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-stone-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg border border-stone-200 transition"
           >
             <RotateCcw size={13} />

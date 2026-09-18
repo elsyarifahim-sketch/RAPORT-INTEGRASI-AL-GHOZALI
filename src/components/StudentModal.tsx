@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Subject, CalculatedStudent, ClassItem } from '../types';
+import { getSubjectsForClass, ensureStudentScoresForClass } from '../data/curriculumSubjects';
 import { X, Save, User } from 'lucide-react';
 
 interface StudentModalProps {
@@ -28,24 +29,26 @@ export const StudentModal: React.FC<StudentModalProps> = ({
   const [scores, setScores] = useState<Record<string, number>>({});
 
   useEffect(() => {
+    const targetClass = student ? (student.classId || defaultClassId) : defaultClassId;
     if (student) {
       setName(student.name);
       setNisn(student.nisn);
-      setClassId(student.classId || defaultClassId);
+      setClassId(targetClass);
       setKeterangan(student.keterangan || 'Tuntas');
-      setScores({ ...student.scores });
+      setScores(ensureStudentScoresForClass(student.scores, targetClass, student.nisn || student.id));
     } else {
       setName('');
       setNisn('');
       setClassId(defaultClassId);
       setKeterangan('Tuntas');
+      const classSubjects = getSubjectsForClass(defaultClassId);
       const initial: Record<string, number> = {};
-      subjects.forEach((s) => {
-        initial[s.id] = 70;
+      classSubjects.forEach((s) => {
+        initial[s.id] = 75;
       });
       setScores(initial);
     }
-  }, [student, subjects, isOpen, defaultClassId]);
+  }, [student, isOpen, defaultClassId]);
 
   if (!isOpen) return null;
 
@@ -68,10 +71,9 @@ export const StudentModal: React.FC<StudentModalProps> = ({
     onClose();
   };
 
-
-  const pondok = subjects.filter((s) => s.category === 'pondok');
-  const umum = subjects.filter((s) => s.category === 'umum');
-  const lisan = subjects.filter((s) => s.category === 'lisan');
+  const currentSubjects = getSubjectsForClass(classId);
+  const pondok = currentSubjects.filter((s) => s.category === 'pondok');
+  const umum = currentSubjects.filter((s) => s.category === 'umum');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
@@ -121,21 +123,63 @@ export const StudentModal: React.FC<StudentModalProps> = ({
                 className="w-full px-3 py-2 text-sm border border-stone-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none font-semibold bg-white"
               >
                 <optgroup label="Kelas 1 SMP">
-                  {classes.filter(c => c.id.startsWith('1')).map((cls) => (
+                  {classes.filter(c => c.id.startsWith('1') && c.id !== '1int').map((cls) => (
                     <option key={cls.id} value={cls.id}>
                       {cls.nameLatin} ({cls.nameAr})
                     </option>
                   ))}
                 </optgroup>
                 <optgroup label="Kelas 2 SMP">
-                  {classes.filter(c => c.id.startsWith('2')).map((cls) => (
+                  {classes.filter(c => c.id.startsWith('2') && !c.id.startsWith('2int')).map((cls) => (
                     <option key={cls.id} value={cls.id}>
                       {cls.nameLatin} ({cls.nameAr})
                     </option>
                   ))}
                 </optgroup>
                 <optgroup label="Kelas 3 SMP">
-                  {classes.filter(c => c.id.startsWith('3')).map((cls) => (
+                  {classes.filter(c => c.id.startsWith('3') && !c.id.startsWith('3int')).map((cls) => (
+                    <option key={cls.id} value={cls.id}>
+                      {cls.nameLatin} ({cls.nameAr})
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Kelas 1 Intensif / 1 SMA">
+                  {classes.filter(c => c.id === '1int' || c.level === '1int').map((cls) => (
+                    <option key={cls.id} value={cls.id}>
+                      {cls.nameLatin} ({cls.nameAr})
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Kelas 2 Intensif / 2 SMA">
+                  {classes.filter(c => c.id.startsWith('2int') || c.level === '2int').map((cls) => (
+                    <option key={cls.id} value={cls.id}>
+                      {cls.nameLatin} ({cls.nameAr})
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Kelas 4 / 1 SMA">
+                  {classes.filter(c => c.id.startsWith('4') || c.level === '4').map((cls) => (
+                    <option key={cls.id} value={cls.id}>
+                      {cls.nameLatin} ({cls.nameAr})
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Kelas 3 Intensif / 3 SMA">
+                  {classes.filter(c => c.id.startsWith('3int') || c.level === '3int').map((cls) => (
+                    <option key={cls.id} value={cls.id}>
+                      {cls.nameLatin} ({cls.nameAr})
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Kelas 5 / 2 SMA">
+                  {classes.filter(c => c.id.startsWith('5') || c.level === '5').map((cls) => (
+                    <option key={cls.id} value={cls.id}>
+                      {cls.nameLatin} ({cls.nameAr})
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Kelas 6 / 3 SMA">
+                  {classes.filter(c => c.id.startsWith('6') || c.level === '6').map((cls) => (
                     <option key={cls.id} value={cls.id}>
                       {cls.nameLatin} ({cls.nameAr})
                     </option>
@@ -160,79 +204,58 @@ export const StudentModal: React.FC<StudentModalProps> = ({
 
 
           {/* Scores - Pondok */}
-          <div className="space-y-3">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-stone-800 bg-stone-100 px-3 py-1.5 rounded-md flex justify-between">
-              <span>1. Mata Pelajaran Pondok (1 - 10)</span>
-              <span className="font-arabic text-sm text-stone-600">مواد المعهد</span>
-            </h4>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-              {pondok.map((sub, i) => (
-                <div key={sub.id} className="bg-stone-50 p-2 rounded-lg border border-stone-200">
-                  <span className="block text-[11px] font-medium text-stone-600 truncate" title={sub.nameId}>
-                    {i + 1}. {sub.nameId}
-                  </span>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={scores[sub.id] ?? ''}
-                    onChange={(e) => handleScoreChange(sub.id, e.target.value)}
-                    className="mt-1 w-full text-center font-bold text-sm bg-white border border-stone-300 rounded p-1 focus:ring-1 focus:ring-emerald-500"
-                  />
-                </div>
-              ))}
+          {pondok.length > 0 && (
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-stone-800 bg-stone-100 px-3 py-1.5 rounded-md flex justify-between">
+                <span>1. Mata Pelajaran Pondok ({pondok.length} Mapel)</span>
+                <span className="font-arabic text-sm text-stone-600">مواد المعهد</span>
+              </h4>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                {pondok.map((sub) => (
+                  <div key={sub.id} className="bg-stone-50 p-2 rounded-lg border border-stone-200">
+                    <span className="block text-[11px] font-medium text-stone-600 truncate" title={sub.nameId}>
+                      {sub.order}. {sub.nameId}
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={scores[sub.id] ?? ''}
+                      onChange={(e) => handleScoreChange(sub.id, e.target.value)}
+                      className="mt-1 w-full text-center font-bold text-sm bg-white border border-stone-300 rounded p-1 focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Scores - Umum */}
-          <div className="space-y-3">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-stone-800 bg-stone-100 px-3 py-1.5 rounded-md flex justify-between">
-              <span>2. Mata Pelajaran Umum (11 - 25)</span>
-              <span className="font-arabic text-sm text-stone-600">المواد العامة</span>
-            </h4>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-              {umum.map((sub, i) => (
-                <div key={sub.id} className="bg-stone-50 p-2 rounded-lg border border-stone-200">
-                  <span className="block text-[11px] font-medium text-stone-600 truncate" title={sub.nameId}>
-                    {i + 11}. {sub.nameId}
-                  </span>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={scores[sub.id] ?? ''}
-                    onChange={(e) => handleScoreChange(sub.id, e.target.value)}
-                    className="mt-1 w-full text-center font-bold text-sm bg-white border border-stone-300 rounded p-1 focus:ring-1 focus:ring-emerald-500"
-                  />
-                </div>
-              ))}
+          {umum.length > 0 && (
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-stone-800 bg-stone-100 px-3 py-1.5 rounded-md flex justify-between">
+                <span>2. Mata Pelajaran Umum ({umum.length} Mapel)</span>
+                <span className="font-arabic text-sm text-stone-600">المواد العامة</span>
+              </h4>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                {umum.map((sub) => (
+                  <div key={sub.id} className="bg-stone-50 p-2 rounded-lg border border-stone-200">
+                    <span className="block text-[11px] font-medium text-stone-600 truncate" title={sub.nameId}>
+                      {sub.order}. {sub.nameId}
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={scores[sub.id] ?? ''}
+                      onChange={(e) => handleScoreChange(sub.id, e.target.value)}
+                      className="mt-1 w-full text-center font-bold text-sm bg-white border border-stone-300 rounded p-1 focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-
-          {/* Scores - Lisan */}
-          <div className="space-y-3">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-stone-800 bg-stone-100 px-3 py-1.5 rounded-md flex justify-between">
-              <span>3. Materi Lisan (26 - 28)</span>
-              <span className="font-arabic text-sm text-stone-600">المواد الشفهية</span>
-            </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {lisan.map((sub, i) => (
-                <div key={sub.id} className="bg-stone-50 p-2 rounded-lg border border-stone-200">
-                  <span className="block text-[11px] font-medium text-stone-600 truncate" title={sub.nameId}>
-                    {i + 26}. {sub.nameId}
-                  </span>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={scores[sub.id] ?? ''}
-                    onChange={(e) => handleScoreChange(sub.id, e.target.value)}
-                    className="mt-1 w-full text-center font-bold text-sm bg-white border border-stone-300 rounded p-1 focus:ring-1 focus:ring-emerald-500"
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
+          )}
 
           {/* Buttons */}
           <div className="flex items-center justify-end gap-3 pt-4 border-t border-stone-200">
