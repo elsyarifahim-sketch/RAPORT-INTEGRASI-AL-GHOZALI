@@ -129,8 +129,8 @@ export const CertificateBorder: React.FC<CertificateBorderProps> = ({ children, 
         <path d="M772 1090 L772 1102 L760 1102" fill="none" stroke="#166534" strokeWidth="1.5" />
       </svg>
 
-      {/* Content wrapper with generous clearance from the border frame (px-12 pt-7 pb-8) */}
-      <div className="relative z-20 px-12 pt-7 pb-8 w-full h-full box-border flex flex-col justify-between">
+      {/* Content wrapper with generous clearance from the border frame (px-12 pt-6 pb-12) */}
+      <div className="relative z-20 px-12 pt-6 pb-12 w-full h-full box-border flex flex-col justify-between">
         {children}
       </div>
     </div>

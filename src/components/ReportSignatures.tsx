@@ -8,11 +8,11 @@ interface ReportSignaturesProps {
 
 export const ReportSignatures: React.FC<ReportSignaturesProps> = ({ config, onOpenDateSettings }) => {
   return (
-    <div className="w-full mt-3 text-stone-900 select-none">
+    <div className="w-full mt-2 text-stone-900 select-none">
       {/* Date in Arabic & Hijri/Masehi */}
       <div 
         onClick={onOpenDateSettings}
-        className={`text-center mb-3 ${onOpenDateSettings ? 'cursor-pointer hover:opacity-80 transition group' : ''}`}
+        className={`text-center mb-2.5 ${onOpenDateSettings ? 'cursor-pointer hover:opacity-80 transition group' : ''}`}
         title={onOpenDateSettings ? 'Klik untuk mengubah tanggal penetapan raport' : undefined}
       >
         <p
@@ -31,25 +31,25 @@ export const ReportSignatures: React.FC<ReportSignaturesProps> = ({ config, onOp
       {/* Signatures Grid */}
       <div className="w-full px-2">
         {/* Top Row: Wali Santri (Left) & Wali Kelas (Right) */}
-        <div className="flex justify-between items-start text-center mb-5">
+        <div className="flex justify-between items-start text-center mb-3">
           {/* Wali Santri */}
-          <div className="flex-1 max-w-[280px] flex flex-col items-center">
+          <div className="flex-1 max-w-[260px] flex flex-col items-center">
             <span
-              className="font-bold text-sm md:text-base font-arabic mb-11"
+              className="font-bold text-sm md:text-base font-arabic mb-8"
               style={{ fontFamily: "'Amiri', serif" }}
             >
               {config.waliSantriLabelAr || 'ولي الأمر'}
             </span>
-            <div className="w-44 border-b border-stone-800" />
+            <div className="w-40 border-b border-stone-800" />
             <span className="text-[10px] text-stone-500 mt-1 italic whitespace-nowrap">
               (Tanda Tangan Orang Tua/Wali)
             </span>
           </div>
 
           {/* Wali Kelas (Single Line Guaranteed) */}
-          <div className="flex-1 max-w-[340px] min-w-[200px] flex flex-col items-center">
+          <div className="flex-1 max-w-[320px] min-w-[180px] flex flex-col items-center">
             <span
-              className="font-bold text-sm md:text-base font-arabic mb-11"
+              className="font-bold text-sm md:text-base font-arabic mb-8"
               style={{ fontFamily: "'Amiri', serif" }}
             >
               {config.waliKelasLabelAr || 'ولي الفصل'}
@@ -61,9 +61,9 @@ export const ReportSignatures: React.FC<ReportSignaturesProps> = ({ config, onOp
         </div>
 
         {/* Bottom Row Center: Mudir Al-Ma'had / Direktur Pondok */}
-        <div className="flex flex-col items-center justify-center text-center mt-0.5 pb-2 relative z-20">
+        <div className="flex flex-col items-center justify-center text-center relative z-20 pb-1">
           <span
-            className="font-bold text-sm md:text-base font-arabic mb-11"
+            className="font-bold text-sm md:text-base font-arabic mb-8"
             style={{ fontFamily: "'Amiri', serif" }}
           >
             {config.direkturLabelAr || 'مدير المعهد'}
