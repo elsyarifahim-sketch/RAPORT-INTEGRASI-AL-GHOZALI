@@ -164,42 +164,165 @@ export function exportSingleRaportToExcel(
 }
 
 /**
- * Helper to safely convert modern CSS color functions (oklch, oklab, color, lch, lab)
+ * Convert OKLCH color (L C H [/ A]) to standard sRGB rgb/rgba string.
+ * This completely prevents html2canvas from crashing on unsupported oklch color functions.
+ */
+function oklchToRgb(lStr: string, cStr: string, hStr: string, aStr?: string): string {
+  try {
+    let L = parseFloat(lStr);
+    if (lStr.includes('%')) L = L / 100;
+    if (isNaN(L)) L = 0.5;
+
+    let C = parseFloat(cStr);
+    if (cStr.includes('%')) C = (C / 100) * 0.4;
+    if (isNaN(C)) C = 0;
+
+    let H = parseFloat(hStr);
+    if (hStr.includes('rad')) H = (H * 180) / Math.PI;
+    if (hStr.includes('turn')) H = H * 360;
+    if (isNaN(H)) H = 0;
+
+    let A = 1;
+    if (aStr !== undefined && aStr.trim() !== '') {
+      const cleanA = aStr.replace('/', '').trim();
+      A = parseFloat(cleanA);
+      if (cleanA.includes('%')) A = A / 100;
+      if (isNaN(A)) A = 1;
+    }
+
+    const hRad = (H * Math.PI) / 180;
+    const a = C * Math.cos(hRad);
+    const b = C * Math.sin(hRad);
+
+    const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
+    const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
+    const s_ = L - 0.0894841775 * a - 1.291485548 * b;
+
+    const l = l_ * l_ * l_;
+    const m = m_ * m_ * m_;
+    const s = s_ * s_ * s_;
+
+    const rLinear = +4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s;
+    const gLinear = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s;
+    const bLinear = -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s;
+
+    const gamma = (v: number) =>
+      v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(Math.max(0, v), 1 / 2.4) - 0.055;
+
+    const R = Math.round(Math.min(255, Math.max(0, gamma(rLinear) * 255)));
+    const G = Math.round(Math.min(255, Math.max(0, gamma(gLinear) * 255)));
+    const B = Math.round(Math.min(255, Math.max(0, gamma(bLinear) * 255)));
+
+    if (A < 0.999) {
+      return `rgba(${R}, ${G}, ${B}, ${parseFloat(A.toFixed(3))})`;
+    }
+    return `rgb(${R}, ${G}, ${B})`;
+  } catch {
+    return '#15803d';
+  }
+}
+
+/**
+ * Convert OKLAB color (L a b [/ A]) to standard sRGB rgb/rgba string.
+ */
+function oklabToRgb(lStr: string, aStrVal: string, bStrVal: string, alphaStr?: string): string {
+  try {
+    let L = parseFloat(lStr);
+    if (lStr.includes('%')) L = L / 100;
+    if (isNaN(L)) L = 0.5;
+
+    let a = parseFloat(aStrVal);
+    if (aStrVal.includes('%')) a = (a / 100) * 0.4;
+    if (isNaN(a)) a = 0;
+
+    let b = parseFloat(bStrVal);
+    if (bStrVal.includes('%')) b = (b / 100) * 0.4;
+    if (isNaN(b)) b = 0;
+
+    let A = 1;
+    if (alphaStr !== undefined && alphaStr.trim() !== '') {
+      const cleanA = alphaStr.replace('/', '').trim();
+      A = parseFloat(cleanA);
+      if (cleanA.includes('%')) A = A / 100;
+      if (isNaN(A)) A = 1;
+    }
+
+    const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
+    const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
+    const s_ = L - 0.0894841775 * a - 1.291485548 * b;
+
+    const l = l_ * l_ * l_;
+    const m = m_ * m_ * m_;
+    const s = s_ * s_ * s_;
+
+    const rLinear = +4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s;
+    const gLinear = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s;
+    const bLinear = -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s;
+
+    const gamma = (v: number) =>
+      v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(Math.max(0, v), 1 / 2.4) - 0.055;
+
+    const R = Math.round(Math.min(255, Math.max(0, gamma(rLinear) * 255)));
+    const G = Math.round(Math.min(255, Math.max(0, gamma(gLinear) * 255)));
+    const B = Math.round(Math.min(255, Math.max(0, gamma(bLinear) * 255)));
+
+    if (A < 0.999) {
+      return `rgba(${R}, ${G}, ${B}, ${parseFloat(A.toFixed(3))})`;
+    }
+    return `rgb(${R}, ${G}, ${B})`;
+  } catch {
+    return '#15803d';
+  }
+}
+
+/**
+ * Replaces all modern CSS color functions (oklch, oklab, lab, lch, color, color-mix)
+ * from any string of CSS or attribute values.
+ */
+function replaceModernColors(cssText: string): string {
+  if (!cssText || typeof cssText !== 'string') return '';
+
+  // 1. Convert OKLCH: oklch(L C H [/ A])
+  let result = cssText.replace(
+    /oklch\s*\(\s*([^,\s/)]+)\s+([^,\s/)]+)\s+([^,\s/)]+)(?:\s*(?:\/|,)\s*([^)]+))?\s*\)/gi,
+    (_match, l, c, h, a) => oklchToRgb(l, c, h, a)
+  );
+
+  // 2. Convert OKLAB: oklab(L a b [/ A])
+  result = result.replace(
+    /oklab\s*\(\s*([^,\s/)]+)\s+([^,\s/)]+)\s+([^,\s/)]+)(?:\s*(?:\/|,)\s*([^)]+))?\s*\)/gi,
+    (_match, l, aVal, bVal, alpha) => oklabToRgb(l, aVal, bVal, alpha)
+  );
+
+  // 3. Fallback for any other modern color functions (color, color-mix, lab, lch)
+  result = result.replace(/(?:lab|lch|color-mix|color)\s*\([^;}{)]*(?:\([^)]*\)[^;}{)]*)*\)/gi, (match) => {
+    const lower = match.toLowerCase();
+    if (lower.includes('emerald') || lower.includes('green') || lower.includes('166534')) {
+      return '#166534';
+    }
+    if (lower.includes('white') || lower.includes('0.9') || lower.includes('255')) {
+      return '#ffffff';
+    }
+    if (lower.includes('gray') || lower.includes('stone') || lower.includes('slate')) {
+      return '#374151';
+    }
+    return '#1c1917';
+  });
+
+  // 4. Absolute safety catch: eliminate any stray oklch or oklab calls
+  result = result.replace(/oklch\s*\([^)]*\)/gi, '#166534');
+  result = result.replace(/oklab\s*\([^)]*\)/gi, '#166534');
+
+  return result;
+}
+
+/**
+ * Helper to safely convert modern CSS color functions
  * into standard HEX/RGB colors compatible with html2canvas.
  */
 function convertToRgbOrHex(cssColorStr: string): string {
   if (!cssColorStr || typeof cssColorStr !== 'string') return cssColorStr;
-  
-  if (!/(?:oklch|oklab|lch|lab|color|color-mix)\s*\(/i.test(cssColorStr)) {
-    return cssColorStr;
-  }
-
-  try {
-    const canvas = document.createElement('canvas');
-    canvas.width = 1;
-    canvas.height = 1;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.fillStyle = '#000000';
-      ctx.fillStyle = cssColorStr.trim();
-      const resolved = ctx.fillStyle;
-      if (resolved && !/(?:oklch|oklab|lch|lab|color|color-mix)\s*\(/i.test(resolved)) {
-        return resolved;
-      }
-    }
-  } catch (e) {
-    // ignore
-  }
-
-  // Smart fallback depending on whether it's a light or dark tint
-  const lower = cssColorStr.toLowerCase();
-  if (lower.includes('0.9') || lower.includes('0.8') || lower.includes('255') || lower.includes('white')) {
-    return '#f8fafc';
-  }
-  if (lower.includes('emerald') || lower.includes('green') || lower.includes('168.')) {
-    return '#15803d';
-  }
-  return '#1c1917';
+  return replaceModernColors(cssColorStr);
 }
 
 /**
@@ -238,44 +361,72 @@ async function waitForAssetsToLoad(element: HTMLElement): Promise<void> {
 
 /**
  * Sanitizes all stylesheets and DOM elements in cloned document for html2canvas
- * to prevent crash on modern CSS color functions and lock exact A4 layout dimensions.
+ * to prevent crash on modern CSS color functions, preserve Arabic & Latin fonts,
+ * and lock exact A4 layout dimensions without distorting metrics.
  */
 function sanitizeClonedDocumentForHtml2Canvas(clonedDoc: Document, clonedEl: HTMLElement) {
-  const modernColorRegex = /(?:oklab|oklch|lab|lch|color|color-mix)\s*\([^;}{)]*(?:\([^)]*\)[^;}{)]*)*\)/gi;
+  // 1. Ensure Google Fonts and Arabic font definitions are explicitly available in clonedDoc
+  try {
+    let fontLink = clonedDoc.querySelector('link[href*="fonts.googleapis.com"]');
+    if (!fontLink) {
+      fontLink = clonedDoc.createElement('link');
+      fontLink.setAttribute('rel', 'stylesheet');
+      fontLink.setAttribute(
+        'href',
+        'https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Scheherazade+New:wght@400;600;700&display=swap'
+      );
+      clonedDoc.head.appendChild(fontLink);
+    }
 
-  // 1. Sanitize all <style> elements by replacing oklab/oklch/color(...) with rgb/hex
+    // Add explicit font-family utility styles to ensure rendering
+    const customFontStyle = clonedDoc.createElement('style');
+    customFontStyle.textContent = `
+      @import url('https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Scheherazade+New:wght@400;600;700&display=swap');
+      .font-arabic, [dir="rtl"] {
+        font-family: 'Amiri', 'Scheherazade New', 'Traditional Arabic', serif !important;
+        letter-spacing: normal !important;
+      }
+      .font-sans {
+        font-family: 'Plus Jakarta Sans', system-ui, sans-serif !important;
+      }
+    `;
+    clonedDoc.head.appendChild(customFontStyle);
+  } catch {
+    // ignore
+  }
+
+  // 2. Sanitize all <style> elements by replacing all oklab/oklch/color(...) with rgb/hex
   clonedDoc.querySelectorAll('style').forEach((styleEl) => {
-    if (styleEl.textContent && /(?:oklab|oklch|lab|lch|color|color-mix)\s*\(/i.test(styleEl.textContent)) {
+    if (styleEl.textContent) {
       try {
-        styleEl.textContent = styleEl.textContent.replace(modernColorRegex, (match) => {
-          return convertToRgbOrHex(match);
-        });
-      } catch (e) {
+        styleEl.textContent = replaceModernColors(styleEl.textContent);
+      } catch {
         // ignore
       }
     }
   });
 
-  // 2. Lock exact pixel-perfect A4 dimensions (210mm x 297mm) on the certificate container
+  // 3. Remove non-font external CSS that might cause CORS or syntax issues
+  clonedDoc.querySelectorAll('link[rel="stylesheet"]').forEach((linkEl) => {
+    try {
+      const href = linkEl.getAttribute('href') || '';
+      if (!href.includes('fonts.googleapis.com') && !href.includes('fonts.gstatic.com')) {
+        linkEl.parentNode?.removeChild(linkEl);
+      }
+    } catch {
+      // ignore
+    }
+  });
+
+  // 4. Ensure cloned element has standard box sizing and clean white background
   if (clonedEl) {
-    clonedEl.style.width = '210mm';
-    clonedEl.style.minWidth = '210mm';
-    clonedEl.style.maxWidth = '210mm';
-    clonedEl.style.height = '297mm';
-    clonedEl.style.minHeight = '297mm';
-    clonedEl.style.maxHeight = '297mm';
-    clonedEl.style.boxSizing = 'border-box';
     clonedEl.style.boxShadow = 'none';
-    clonedEl.style.margin = '0 auto';
-    clonedEl.style.padding = '0';
     clonedEl.style.backgroundColor = '#ffffff';
     clonedEl.style.color = '#1c1917';
     clonedEl.style.transform = 'none';
-    clonedEl.style.position = 'relative';
-    clonedEl.style.overflow = 'hidden';
   }
 
-  // 3. Sanitize all inline styles & computed styles on the element tree
+  // 5. Sanitize all inline styles & computed styles on the element tree
   const targetElements = clonedEl
     ? [clonedEl, ...Array.from(clonedEl.querySelectorAll('*'))]
     : Array.from(clonedDoc.querySelectorAll('*'));
@@ -296,19 +447,10 @@ function sanitizeClonedDocumentForHtml2Canvas(clonedDoc: Document, clonedEl: HTM
     const el = node as HTMLElement;
     if (!el || !el.style) return;
 
-    // Do NOT alter SVG definitions or elements that already have explicit green/gold colors
-    const tagName = el.tagName ? el.tagName.toLowerCase() : '';
-    if (['svg', 'path', 'pattern', 'rect', 'circle', 'g', 'defs'].includes(tagName)) {
-      return;
-    }
-
     // Handle inline style attributes
     const styleAttr = el.getAttribute('style');
     if (styleAttr && /(?:oklab|oklch|lab|lch|color|color-mix)\s*\(/i.test(styleAttr)) {
-      el.setAttribute(
-        'style',
-        styleAttr.replace(modernColorRegex, (match) => convertToRgbOrHex(match))
-      );
+      el.setAttribute('style', replaceModernColors(styleAttr));
     }
 
     // Handle computed styles by overwriting them with resolved RGB/Hex inline
@@ -319,11 +461,11 @@ function sanitizeClonedDocumentForHtml2Canvas(clonedDoc: Document, clonedEl: HTM
         for (const prop of colorProps) {
           const val = (computed as any)[prop];
           if (typeof val === 'string' && /(?:oklab|oklch|lab|lch|color|color-mix)\s*\(/i.test(val)) {
-            (el.style as any)[prop] = convertToRgbOrHex(val);
+            (el.style as any)[prop] = replaceModernColors(val);
           }
         }
       }
-    } catch (err) {
+    } catch {
       // ignore
     }
   });

@@ -22,6 +22,7 @@
   box-sizing: border-box;
   background: white;
   margin: 0 auto;
+  padding: 4mm;
 }
 
 @media print {
@@ -43,6 +44,7 @@
     box-shadow: none !important;
     border-radius: 0 !important;
     margin: 0 auto !important;
+    padding: 4mm !important;
   }
 
   .rapor-page:last-child {
